@@ -5,14 +5,12 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.graphics.Color
-import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.WindowInsetsController
-import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -22,11 +20,15 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.window.OnBackInvokedDispatcher
 
+/**
+ * Shows the Privacy Policy / Support pages. The pages are loaded straight from
+ * the live site and rendered exactly as a browser would — no theme override is
+ * injected, so what the user sees matches Google Chrome (only hosted inside a
+ * WebView with a lightweight in-app header for navigation).
+ */
 class LegalActivity : Activity() {
 
     private lateinit var webView: WebView
-    private var usedFallback = false
-    private var fallbackUrl = ""
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -35,12 +37,7 @@ class LegalActivity : Activity() {
         window.setFlags(1024, 1024)
 
         val title = intent.getStringExtra(EXTRA_TITLE) ?: "Stormreach Haven"
-        val remoteUrl = intent.getStringExtra(EXTRA_URL).orEmpty()
-        val asset = intent.getStringExtra(EXTRA_ASSET).orEmpty()
-        // The bundled copies match the game's dark theme and work offline; the live pages
-        // are only used when no local copy is shipped.
-        val startUrl = if (asset.isNotEmpty()) "file:///android_asset/legal/$asset" else remoteUrl
-        fallbackUrl = if (asset.isNotEmpty()) remoteUrl else ""
+        val startUrl = intent.getStringExtra(EXTRA_URL).orEmpty()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -79,10 +76,10 @@ class LegalActivity : Activity() {
         }
 
         webView = WebView(this).apply {
-            setBackgroundColor(Color.parseColor("#071525"))
+            // Render the page as the site ships it — same as Chrome would.
+            setBackgroundColor(Color.WHITE)
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
-            settings.allowFileAccess = true
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     val uri = request.url
@@ -95,16 +92,6 @@ class LegalActivity : Activity() {
 
                 override fun onPageFinished(view: WebView, url: String) {
                     progress.visibility = View.GONE
-                    view.evaluateJavascript(DARK_THEME_CSS, null)
-                }
-
-                override fun onReceivedError(
-                    view: WebView, request: WebResourceRequest, error: WebResourceError
-                ) {
-                    if (request.isForMainFrame && !usedFallback && fallbackUrl.isNotEmpty()) {
-                        usedFallback = true
-                        view.loadUrl(fallbackUrl)
-                    }
                 }
             }
         }
@@ -156,22 +143,8 @@ class LegalActivity : Activity() {
     companion object {
         const val EXTRA_TITLE = "title"
         const val EXTRA_URL = "url"
-        const val EXTRA_ASSET = "asset"
 
         const val PRIVACY_URL = "https://stormreachhaven.store/privacy-policy.html"
         const val SUPPORT_URL = "https://stormreachhaven.store/support.html"
-
-        /** Keeps remote pages readable if they ever replace the bundled dark-themed copies. */
-        private const val DARK_THEME_CSS = """
-            (function() {
-              var style = document.createElement('style');
-              style.textContent = 'html,body{background:#071525 !important;color:#d7e4f6 !important;}' +
-                'h1,h2,h3,strong{color:#f3d27a !important;}' +
-                'p,li,td,div,span,label{color:#d7e4f6 !important;}' +
-                'a{color:#6ed7ff !important;}' +
-                'input,textarea{background:#0a1a30 !important;color:#eef4ff !important;border-color:#3d628f !important;}';
-              document.head.appendChild(style);
-            })();
-        """
     }
 }
