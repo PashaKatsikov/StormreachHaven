@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "38488221496",
+    "project_id": "stormreach-haven-73a5f",
+    "storage_bucket": "stormreach-haven-73a5f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:38488221496:android:a6ff4ea771d33530eb83cd",
+        "android_client_info": {
+          "package_name": "com.stormreachhaven.stormreachgame"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDCnMWvPyIojulk7QXwlXy1EYiuLHow8So"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

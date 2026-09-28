@@ -24,3 +24,6 @@ release/*.keystore
 release/keystore.properties
 .kotlin/
 /assets/
+
+# Gray part — per-project seed + credentials, never in git
+gray.properties
