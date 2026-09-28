@@ -840,10 +840,10 @@ class StormreachView(context: Context) : View(context) {
             controller.navigate(Screen.TUTORIAL)
         }
         button(c, .05f, .605f, .48f, .67f, "PRIVACY", BtnKind.DARK, size = ui.ts(11f)) {
-            openLegal("PRIVACY POLICY", LegalActivity.PRIVACY_URL, "privacy-policy.html")
+            openLegal("PRIVACY POLICY", LegalActivity.PRIVACY_URL)
         }
         button(c, .52f, .605f, .95f, .67f, "SUPPORT", BtnKind.DARK, size = ui.ts(11f)) {
-            openLegal("SUPPORT", LegalActivity.SUPPORT_URL, "support.html")
+            openLegal("SUPPORT", LegalActivity.SUPPORT_URL)
         }
         button(
             c, .05f, .685f, .95f, .75f,
@@ -1045,12 +1045,11 @@ class StormreachView(context: Context) : View(context) {
         else -> Palette.RED
     }
 
-    private fun openLegal(title: String, url: String, asset: String) {
+    private fun openLegal(title: String, url: String) {
         play("click")
         context.startActivity(Intent(context, LegalActivity::class.java).apply {
             putExtra(LegalActivity.EXTRA_TITLE, title)
             putExtra(LegalActivity.EXTRA_URL, url)
-            putExtra(LegalActivity.EXTRA_ASSET, asset)
         })
     }
 
