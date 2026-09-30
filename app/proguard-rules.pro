@@ -4,6 +4,9 @@
 -keepattributes SourceFile,LineNumberTable
 -keepattributes EnclosingMethod
 -keepattributes InnerClasses
+# Stack traces stay readable via mapping.txt, but the APK does not carry
+# the original source file names.
+-renamesourcefileattribute SourceFile
 
 # ══ WebView JS bridge ══════════════════════════════════════════════════════
 # The @JavascriptInterface methods are called by name from JS; R8 must not
@@ -36,9 +39,15 @@
 -keep class com.stormreachhaven.stormreachgame.config.TideRouter
 -keep class com.stormreachhaven.stormreachgame.config.ReefApp
 
-# ══ Native (white) game — R8 cannot prove the game Activities are live ═════
--keep class com.stormreachhaven.stormreachgame.MainActivity { *; }
--keep class com.stormreachhaven.stormreachgame.LegalActivity { *; }
+# ══ Native (white) game ════════════════════════════════════════════════════
+# Manifest components: keep the class (AGP also keeps it from the manifest)
+# but NOT its members, so R8 still renames the game code.
+-keep class com.stormreachhaven.stormreachgame.MainActivity
+-keep class com.stormreachhaven.stormreachgame.LegalActivity
+
+# RunChannel is persisted by its enum constant name (valueOf). Renaming
+# UNDECIDED / STREAM / NATIVE would make a stored value unreadable.
+-keepclassmembernames enum com.stormreachhaven.stormreachgame.prefs.Prefs$RunChannel { *; }
 
 # ══ Strip debug-level logs in release ══════════════════════════════════════
 -assumenosideeffects class android.util.Log {

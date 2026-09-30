@@ -5,13 +5,12 @@ import android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
 import android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
 import android.content.Intent.FLAG_ACTIVITY_NEW_TASK
 import android.graphics.Color
-import android.os.Build
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Gravity
-import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.stormreachhaven.stormreachgame.R
@@ -23,8 +22,10 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
- * No-internet screen. Branded background PNG (portrait / landscape) with a RETRY button.
- * On retry, checks real connectivity and returns to TideRouter or WaveShell.
+ * No-internet screen. A storm-toned gradient with a title, a one-line hint and a
+ * RETRY button — laid out programmatically so it reads correctly in portrait and
+ * landscape. On retry, checks real connectivity and returns to TideRouter or
+ * WaveShell.
  */
 class NoCurrentScreen : AppCompatActivity() {
 
@@ -38,31 +39,24 @@ class NoCurrentScreen : AppCompatActivity() {
         wire = NetMon(applicationContext)
         returnUrl = intent.getStringExtra(EXTRA_RETURN_URL)
 
-        val isLandscape = resources.configuration.orientation ==
-                android.content.res.Configuration.ORIENTATION_LANDSCAPE
-        val bgRes = if (isLandscape) R.drawable.reef_nowifi_landscape
-                    else R.drawable.reef_nowifi_portrait
-
         val root = FrameLayout(this).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
             )
-            setBackgroundColor(Color.BLACK)
+            background = GradientBackground.storm()
         }
 
-        val bg = ImageView(this).apply {
-            setImageResource(bgRes)
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
+        root.addView(
+            GradientBackground.textBlock(
+                this,
+                title = "NO INTERNET CONNECTION",
+                subtitle = "Check your connection and try again"
             )
-        }
-        root.addView(bg)
+        )
 
         val btn = buildRetryButton()
         retryBtn = btn
         btn.setOnClickListener { tryRetry() }
-
         val lp = FrameLayout.LayoutParams(dpToPx(200), dpToPx(52), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
         lp.bottomMargin = dpToPx(48)
         btn.layoutParams = lp

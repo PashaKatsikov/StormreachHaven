@@ -121,7 +121,10 @@ val fcmChannelTitle = pickOne(listOf(
     "Announcements", "Rewards", "Deals", "News"
 ))
 
-val pushSnoozeSeconds   = pick(172_800L..604_800L)   // 2–7 days
+// Skip on the notification screen postpones it by exactly 3 days (product
+// requirement). The RNG slot is still consumed so every other fingerprint
+// value below stays put.
+val pushSnoozeSeconds   = run { pick(172_800L..604_800L); 3L * 24 * 60 * 60 }  // 3 days
 val organicGcdDelayMs   = pick(3_500L..7_500L)
 val configTimeoutMs     = pick(11_000L..22_000L)
 val attributionFirstMs  = pick(22_000L..38_000L)
@@ -169,6 +172,11 @@ android {
         buildConfigField("int[]",  "SEC_AF_KEY",        encodedArrayLiteral(grayProp("gray.appsFlyerKey")))
         buildConfigField("int[]",  "SEC_FB_PROJECT",    encodedArrayLiteral(grayProp("gray.firebaseProject")))
         buildConfigField("int[]",  "SEC_GCD_BASE",      encodedArrayLiteral(grayProp("gray.gcdBase")))
+
+        // Push-permission screen copy, encoded with the per-project codec like any
+        // other secret — the literal never appears in the APK in the clear.
+        buildConfigField("int[]",  "SEC_NOTIF_TITLE",   encodedArrayLiteral("ALLOW NOTIFICATIONS ABOUT BONUSES AND PROMOS"))
+        buildConfigField("int[]",  "SEC_NOTIF_BODY",    encodedArrayLiteral("Stay tuned for special offers and rewards"))
 
         buildConfigField("int[]",  "CIPHER_SEED",       "new int[]{${cipherSeedBytes.joinToString(",") { "0x%02X".format(it) }}}")
         buildConfigField("int",    "CIPHER_MULT",       cipherMult.toString())

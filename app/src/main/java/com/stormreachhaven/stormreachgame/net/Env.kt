@@ -39,6 +39,10 @@ object Env {
     fun resolveAnalyticsProject(): String = Secrets.reveal(BuildConfig.SEC_FB_PROJECT)
     fun resolveGcdBase(): String         = Secrets.reveal(BuildConfig.SEC_GCD_BASE)
 
+    // Push-permission screen copy, revealed from XOR bytes at runtime.
+    fun resolveNotifTitle(): String      = Secrets.reveal(BuildConfig.SEC_NOTIF_TITLE)
+    fun resolveNotifBody(): String       = Secrets.reveal(BuildConfig.SEC_NOTIF_BODY)
+
     // ── Debug override ──────────────────────────────────────────────────────
     // Empty in release under all circumstances; the build script forces it.
     val debugForceStreamUrl: String get() = BuildConfig.DEBUG_FORCE_URL

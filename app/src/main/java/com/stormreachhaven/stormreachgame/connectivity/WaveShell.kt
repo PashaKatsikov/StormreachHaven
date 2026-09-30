@@ -71,6 +71,8 @@ class WaveShell : AppCompatActivity() {
     private var redirectRetries = 0
     /** One fallback to the configured entry point per settled page. */
     private var entryPointRetried = false
+    /** Full chain restarts from the entry point once the per-hop budget is spent. */
+    private var fullRestarts = 0
     private var rendererRecoveries = 0
 
     /** A failed load still reaches onPageFinished; without this it resets the budget. */
@@ -217,16 +219,12 @@ class WaveShell : AppCompatActivity() {
     private var coverJob: Job? = null
 
     /**
-     * Hides the empty view behind a scrim and a spinner while the session's
-     * **first** page resolves. Nothing else earns a cover: every later
-     * navigation, including every hop of an affiliate redirect chain, resolves
-     * behind the page the user is already reading, so they see the destination
-     * site appear rather than a loading screen sitting between them and it.
-     *
-     * Note what this is NOT: a snapshot of the view. `WebView.draw` into a software
-     * canvas on a hardware-accelerated view yields solid black, which is precisely the
-     * "black screen between redirects" this replaced.
-     *
+     * Opaque black fill with a centred spinner, raised over the WebView for the
+     * duration of any main-frame navigation. A redirect chain re-raises it on
+     * every hop before a drop can land, so its intermediate pages — and any
+     * browser ERR_* page a hop renders — never surface; the cover is only dropped
+     * when a page actually settles (onPageFinished / progress 100). Reusing the
+     * existing cover keeps it steady across the hops instead of blinking.
      */
     private fun raiseCover() {
         coverJob?.cancel()
@@ -316,10 +314,11 @@ class WaveShell : AppCompatActivity() {
             // shouldOverrideUrlLoading does not see every server-side 30x, so the
             // URL the engine actually committed to is the other half of the trail.
             if (url != BLANK) deepestHop = url
-            // Only the very first page of the session is covered. After that the
-            // previous page stays on screen while the next hop resolves, so a
-            // redirect chain hands the user its destination instead of a scrim.
-            if (url != BLANK && !firstPageSettled) raiseCover()
+            // Every main-frame navigation is covered by an opaque black scrim with a
+            // centred spinner. A redirect chain re-raises it on each hop before any
+            // drop, so its intermediate pages — and any browser ERR_* page a hop
+            // renders — stay hidden; only the settled destination is revealed.
+            if (url != BLANK) raiseCover()
             Trace.i(TAG, "onPageStarted")
         }
 
@@ -337,6 +336,11 @@ class WaveShell : AppCompatActivity() {
                 return
             }
 
+            // From here the navigation is genuinely failing, and Chromium is about
+            // to commit its own ERR_* page. Raise the black cover first so that
+            // page can never be seen while we recover.
+            raiseCover()
+
             val isLoop = code == -9 || code == -1007 ||
                     desc.contains("too_many", ignoreCase = true)
             if (isLoop) {
@@ -352,8 +356,10 @@ class WaveShell : AppCompatActivity() {
                 return
             }
 
-            // Anything else: the page is what it is. Never leave the user under
-            // an overlay waiting on a load that already failed.
+            // Anything else: wipe Chromium's error page to blank (black, under the
+            // cover) rather than revealing it, then reveal the clean black.
+            runCatching { view.stopLoading() }
+            view.loadUrl(BLANK)
             dropCover(0L)
         }
 
@@ -362,6 +368,7 @@ class WaveShell : AppCompatActivity() {
             if (loadFailed || url == BLANK) return
             redirectRetries = 0
             entryPointRetried = false
+            fullRestarts = 0
             retryPending = false
             firstPageSettled = true
             lastMainFrameUrl = url
@@ -406,14 +413,13 @@ class WaveShell : AppCompatActivity() {
      *    callback. The engine is still unwinding the failed navigation at that
      *    point and swallows or defers a re-entrant load — which is where the
      *    multi-second stalls between attempts came from.
-     *  - When the budget is gone it does not leave the user under an overlay
-     *    until the cover's own timeout. ERR_TOO_MANY_REDIRECTS is not in the
-     *    network-error set, so before this the exhausted path did nothing at all.
+     *  - When the budget is gone it retries the entry point, then restarts the
+     *    whole chain a couple of times, and if it still cannot resolve it wipes
+     *    Chromium's ERR_TOO_MANY_REDIRECTS page to blank — the user never sees it.
      *
-     * Nothing here raises the cover. A loop in an affiliate chain is dead time
-     * mid-navigation, not a state worth putting a screen in front of the user
-     * for — the retry is queued within 60 ms and the page underneath is
-     * replaced before it has drawn.
+     * The black cover is already up (raised in onReceivedError) for the whole of
+     * this, so every hop and every retry happens behind it; only a settled page
+     * is ever revealed.
      */
     private fun handleRedirectLoop(view: WebView, failedUrl: String) {
         if (redirectRetries < Env.redirectRetryMax) {
@@ -437,8 +443,28 @@ class WaveShell : AppCompatActivity() {
             return
         }
 
-        Trace.w(TAG, "redirect chain unresolvable — handing the page back")
+        // Resume and single entry-point retry are both spent. Give the whole chain
+        // a fresh start from the entry point a couple of times — affiliate loops
+        // routinely clear once enough cookies are set — resetting the budget each
+        // time so it gets a real run.
+        if (fullRestarts < MAX_FULL_RESTARTS && !entryPoint.isNullOrBlank()) {
+            fullRestarts++
+            redirectRetries = 0
+            entryPointRetried = false
+            deepestHop = null
+            retryPending = true
+            Trace.w(TAG, "redirect budget spent → full restart $fullRestarts from entry point")
+            runCatching { view.stopLoading() }
+            postLoad(view, entryPoint)
+            return
+        }
+
+        // Truly unresolvable. Never surface Chromium's ERR_TOO_MANY_REDIRECTS page:
+        // wipe it to blank (black, matching the cover) and reveal that instead.
+        Trace.w(TAG, "redirect chain unresolvable — wiping error page to blank")
         retryPending = false
+        runCatching { view.stopLoading() }
+        view.loadUrl(BLANK)
         dropCover(0L)
     }
 
@@ -473,6 +499,11 @@ class WaveShell : AppCompatActivity() {
             // about:blank is only ever loaded on the way out to the offline screen,
             // so its progress says nothing about the page the user is waiting for.
             if (newProgress < 100 || view.url == BLANK) return
+            // Chromium's ERR_* page is a page too and loads to 100%. Without this
+            // guard, progress-100 on that error page dropped the cover and let it
+            // flash between hops. A failed load, or one with a retry queued, keeps
+            // the cover up — only a genuine page ever lifts it.
+            if (loadFailed || retryPending) return
             dropCover()
         }
 
@@ -578,9 +609,14 @@ class WaveShell : AppCompatActivity() {
                     android.content.res.Configuration.ORIENTATION_LANDSCAPE
             val cutout = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
                 insets.displayCutout else null
-            val topPad   = if (!isLandscape) (cutout?.safeInsetTop   ?: 0).coerceAtLeast(insetTop(insets))   else 0
-            val leftPad  = if (isLandscape)  (cutout?.safeInsetLeft  ?: 0).coerceAtLeast(insetLeft(insets))  else 0
-            val rightPad = if (isLandscape)  (cutout?.safeInsetRight ?: 0).coerceAtLeast(insetRight(insets)) else 0
+            // Landscape pads ONLY for the camera cutout, never for the system bars.
+            // Opening the keyboard makes the navigation bar appear, and folding its
+            // inset into the padding here is what shrank the WebView out from under
+            // the page. Left out, the bar simply draws over the WebView (it is a
+            // transient, swipe-shown bar) while the notch inset is still respected.
+            val topPad   = if (!isLandscape) (cutout?.safeInsetTop ?: 0).coerceAtLeast(insetTop(insets)) else 0
+            val leftPad  = if (isLandscape)  (cutout?.safeInsetLeft  ?: 0) else 0
+            val rightPad = if (isLandscape)  (cutout?.safeInsetRight ?: 0) else 0
             v.setPadding(leftPad, topPad, rightPad, 0)
             insets
         }
@@ -590,12 +626,6 @@ class WaveShell : AppCompatActivity() {
     private fun insetTop(insets: WindowInsets): Int =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
             insets.getInsets(WindowInsets.Type.systemBars()).top else 0
-    private fun insetLeft(insets: WindowInsets): Int =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
-            insets.getInsets(WindowInsets.Type.systemBars()).left else 0
-    private fun insetRight(insets: WindowInsets): Int =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
-            insets.getInsets(WindowInsets.Type.systemBars()).right else 0
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
@@ -737,8 +767,11 @@ class WaveShell : AppCompatActivity() {
         /** Renderer recoveries per Activity — beyond this we go offline. */
         private const val MAX_RENDERER_RECOVERIES = 3
 
-        /** Dim over the empty view while the session's first page resolves. */
-        private const val COVER_SCRIM = 0xB3000000.toInt()
+        /** Full redirect-chain restarts before the error page is wiped to blank. */
+        private const val MAX_FULL_RESTARTS = 2
+
+        /** Opaque black fill under the spinner while a page / redirect chain resolves. */
+        private const val COVER_SCRIM = 0xFF000000.toInt()
 
         /** Pause before a queued redirect-loop retry. Long enough to let the
          *  engine finish unwinding the failed navigation, short enough to be

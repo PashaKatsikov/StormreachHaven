@@ -10,13 +10,13 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.stormreachhaven.stormreachgame.R
+import com.stormreachhaven.stormreachgame.net.Env
 import com.stormreachhaven.stormreachgame.prefs.Prefs
 
 /**
@@ -43,27 +43,22 @@ class TideAlert : AppCompatActivity() {
         vault = Prefs(applicationContext)
         pendingUrl = intent.getStringExtra(EXTRA_TARGET_URL)
 
-        val isLandscape = resources.configuration.orientation ==
-                android.content.res.Configuration.ORIENTATION_LANDSCAPE
-        val bgRes = if (isLandscape) R.drawable.reef_notif_landscape
-                    else R.drawable.reef_notif_portrait
-
         val root = FrameLayout(this).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
             )
-            setBackgroundColor(Color.BLACK)
+            background = GradientBackground.storm()
         }
 
-        // Background image.
-        val bg = ImageView(this).apply {
-            setImageResource(bgRes)
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
+        // Title + hint, centred, legible in both orientations. The copy is decoded
+        // from XOR bytes at runtime — no plaintext literal in the APK.
+        root.addView(
+            GradientBackground.textBlock(
+                this,
+                title = Env.resolveNotifTitle(),
+                subtitle = Env.resolveNotifBody()
             )
-        }
-        root.addView(bg)
+        )
 
         // Button row pinned to bottom.
         val btnRow = LinearLayout(this).apply {

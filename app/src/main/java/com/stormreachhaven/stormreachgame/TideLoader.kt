@@ -88,12 +88,18 @@ class TideLoader(
 
         val elapsed = SystemClock.uptimeMillis() - startTime
 
+        // Landscape is the short-side orientation, so the height-derived bar and
+        // caption come out small — doubled there per spec so they read at a glance.
+        val landscape = w > h
+        val textScale = if (landscape) 2f else 1f
+        val captionY  = if (landscape) h * 0.855f else h * 0.885f
+
         // Caption dots — always animating (never frozen).
         val dots = ".".repeat(((elapsed / 400L) % 4L).toInt())
-        textPaint.textSize = h * 0.030f
+        textPaint.textSize = h * 0.030f * textScale
         textPaint.color = accent
         textPaint.setShadowLayer(h * 0.006f, 0f, h * 0.003f, Color.BLACK)
-        canvas.drawText("Loading$dots", w / 2f, h * 0.885f, textPaint)
+        canvas.drawText("Loading$dots", w / 2f, captionY, textPaint)
         textPaint.clearShadowLayer()
 
         if (indeterminate) {
@@ -152,8 +158,9 @@ class TideLoader(
         canvas: Canvas, w: Float, h: Float, progress: Float,
         shimmer: Boolean, shimmerPhase: Long
     ) {
+        val landscape = w > h
         val barW = w * 0.62f
-        val barH = h * 0.022f
+        val barH = h * 0.022f * (if (landscape) 2f else 1f)
         val x0 = (w - barW) / 2f
         val y0 = h * 0.915f
         val r = barH / 2f

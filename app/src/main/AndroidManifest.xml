@@ -35,7 +35,7 @@
         <!-- Firebase: monochrome notification icon + per-project default channel. -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
-            android:resource="@drawable/ic_notif_bolt" />
+            android:resource="@drawable/ic_notif_flame" />
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="${grayFcmChannelId}" />

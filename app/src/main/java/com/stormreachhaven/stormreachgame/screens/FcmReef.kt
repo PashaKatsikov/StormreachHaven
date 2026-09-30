@@ -105,7 +105,7 @@ class FcmReef : FirebaseMessagingService() {
         )
 
         val builder = NotificationCompat.Builder(ctx, BuildConfig.FCM_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notif_bolt)
+            .setSmallIcon(R.drawable.ic_notif_flame)
             .setContentTitle(title)
             .setContentText(body)
             .setAutoCancel(true)

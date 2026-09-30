@@ -94,14 +94,22 @@ class TideRouter : AppCompatActivity() {
             return
         }
 
-        // Installed via a link with the radio off. Straight to the no-wifi
-        // screen — no splash, no bar for a decision that will not be made.
+        // Any WebView-side launch with the radio off goes straight to the no-wifi
+        // screen — no splash, no progress bar for a page that cannot load yet.
+        // This covers the first run (UNDECIDED) and every later STREAM launch; a
+        // STREAM install carries its saved page along so retry returns to it.
+        // NATIVE was handled above and never needs the network.
         if (pushUrl == null &&
-            vault.runChannel == RunChannel.UNDECIDED &&
+            vault.runChannel != RunChannel.NATIVE &&
             !wire.isConnected()
         ) {
-            Trace.i(TAG, "First run with no link → offline first frame")
-            startActivity(Intent(this, NoCurrentScreen::class.java))
+            Trace.i(TAG, "WebView launch offline → offline first frame (no loader)")
+            val saved = if (vault.runChannel == RunChannel.STREAM && vault.isUrlValid())
+                vault.destinationUrl else null
+            startActivity(Intent(this, NoCurrentScreen::class.java).apply {
+                if (!saved.isNullOrBlank())
+                    putExtra(NoCurrentScreen.EXTRA_RETURN_URL, saved)
+            })
             finish()
             return
         }

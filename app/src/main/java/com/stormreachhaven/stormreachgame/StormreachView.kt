@@ -327,52 +327,31 @@ class StormreachView(context: Context) : View(context) {
         if (animated) postInvalidateOnAnimation()
     }
 
+    /**
+     * The router already showed the branded loading screen (its reef artwork is
+     * this very image) with its progress bar running to 100%. To keep the launch
+     * to a single visible loading screen, the native side does not raise a second
+     * bar that would reset from full — it just holds the same artwork, with the
+     * matching "Loading…" caption, while the remaining assets finish decoding.
+     */
     private fun drawLoading(c: Canvas) {
-        ui.backdrop(c, bmp("Vertical_Loading_Screen.webp"), 118)
-        val pulse = .5f + .5f * sin(ui.time * 1.9f)
-        val logo = bmp("Game_Name.webp")
-        if (logo != null) {
-            ui.glow(c, ui.w / 2f, ui.h * .165f, ui.w * .46f, Palette.GOLD, (32 + 34 * pulse).toInt())
-            ui.sprite(c, logo, ui.r(.12f, .065f, .88f, .265f))
-        } else {
-            ui.titleText(c, "STORMREACH HAVEN", ui.w / 2f, ui.h * .16f, ui.ts(30f))
-        }
-
-        val panel = ui.r(.07f, .795f, .93f, .95f)
-        ui.panel(c, panel)
-        val label = "Loading"
-        val size = ui.ts(16f)
-        val labelWidth = ui.measure(label, size, spacing = .1f)
-        val dotRadius = ui.dp(4f)
-        val dotGap = ui.dp(10f)
-        val group = labelWidth + ui.dp(12f) + dotRadius * 6 + dotGap * 2
-        val startX = ui.w / 2f - group / 2f
-        val rowY = panel.top + panel.height() * .28f
-        ui.text(c, label, startX, rowY, size, Palette.TEXT, spacing = .1f, middle = true)
-        var dotX = startX + labelWidth + ui.dp(12f) + dotRadius
-        repeat(3) { index ->
-            val cursor = ((ui.time * 2.4f) % 3f) - index
-            val active = cursor >= 0f && cursor < 1f
-            val lift = if (active) sin(cursor * Math.PI.toFloat()) else 0f
-            if (active) ui.glow(c, dotX, rowY, dotRadius * 3.4f, Palette.GOLD_LIGHT, (110 * lift).toInt())
-            ui.circle(
-                c, dotX, rowY - dotRadius * lift, dotRadius * (1f + .3f * lift),
-                if (active) Palette.GOLD_LIGHT else Color.argb(110, 190, 205, 225)
+        val img = bmp("Vertical_Loading_Screen.webp")
+        if (img != null) {
+            val scale = max(ui.w / img.width, ui.h / img.height)
+            val dw = img.width * scale
+            val dh = img.height * scale
+            c.drawBitmap(
+                img, null,
+                RectF((ui.w - dw) / 2f, (ui.h - dh) / 2f, (ui.w + dw) / 2f, (ui.h + dh) / 2f),
+                null
             )
-            dotX += dotRadius * 2 + dotGap
+        } else {
+            c.drawColor(Palette.INK)
         }
-        val bar = RectF(
-            panel.left + ui.dp(20f), panel.top + panel.height() * .48f,
-            panel.right - ui.dp(20f), panel.top + panel.height() * .61f
-        )
+        val dots = ".".repeat(((ui.time * 2.5f).toInt()) % 4)
         ui.text(
-            c, "${(loading * 100).toInt()}%", bar.right, bar.top - ui.dp(11f),
-            ui.ts(10f), Palette.GOLD, Paint.Align.RIGHT, spacing = .1f, middle = true
-        )
-        ui.progress(c, bar, loading, Palette.CYAN, Palette.GOLD)
-        ui.multiline(
-            c, TIPS[(ui.time / 3.4f).toInt() % TIPS.size], panel.centerX(),
-            bar.bottom + ui.dp(20f), panel.width() - ui.dp(46f), ui.ts(10f), Palette.TEXT_DIM
+            c, "Loading$dots", ui.w / 2f, ui.h * .885f, ui.ts(16f),
+            Palette.GOLD, Paint.Align.CENTER, spacing = .06f, middle = true
         )
     }
 
