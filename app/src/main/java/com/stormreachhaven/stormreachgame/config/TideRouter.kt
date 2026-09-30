@@ -6,6 +6,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.stormreachhaven.stormreachgame.BuildConfig
 import com.stormreachhaven.stormreachgame.Immersive
 import com.stormreachhaven.stormreachgame.TideLoader
+import com.stormreachhaven.stormreachgame.GameAssets
 import com.stormreachhaven.stormreachgame.MainActivity
 import com.stormreachhaven.stormreachgame.net.Env
 import com.stormreachhaven.stormreachgame.net.ConfigResult
@@ -28,6 +29,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
 import kotlin.coroutines.resume
@@ -88,7 +90,9 @@ class TideRouter : AppCompatActivity() {
         // NATIVE users keep their game, regardless of what a push carries.
         if (vault.runChannel == RunChannel.NATIVE) {
             Trace.i(TAG, "Returning NATIVE — game, no attribution work")
-            setContentView(TideLoader(this, indeterminate = true) {})
+            val loader = TideLoader(this, indeterminate = true) { /* never auto-completes */ }
+            splash = loader
+            setContentView(loader)
             Immersive.apply(this)
             scope.launch { goNative() }
             return
@@ -278,13 +282,18 @@ class TideRouter : AppCompatActivity() {
         if (view == null) go() else view.complete { if (!isFinishing) go() }
     }
 
-    private fun goNative() = handOver {
-        // The native (white) part is the real Stormreach Haven game.
-        startActivity(
-            Intent(this, MainActivity::class.java)
-                .setFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
-        )
-        finish()
+    private suspend fun goNative() {
+        // Decode the game art while the first splash is still up. This is the
+        // only place native assets are touched — a WebView launch never gets here.
+        withContext(Dispatchers.IO) { GameAssets.prepare(applicationContext) }
+        if (isFinishing) return
+        handOver {
+            startActivity(
+                Intent(this, MainActivity::class.java)
+                    .setFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+            finish()
+        }
     }
 
     private fun goGray(url: String) = handOver {

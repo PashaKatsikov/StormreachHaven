@@ -24,8 +24,15 @@ import com.stormreachhaven.stormreachgame.screens.Trace
  */
 class Prefs(ctx: Context) {
 
-    /** Values persisted in [SharedPreferences]. */
-    enum class RunChannel { UNDECIDED, STREAM, NATIVE }
+    /**
+     * Stored as a plain int. The names never become string constants, so a
+     * release build does not carry them.
+     */
+    object RunChannel {
+        const val UNDECIDED = 0
+        const val STREAM = 1
+        const val NATIVE = 2
+    }
 
     private val plain: SharedPreferences =
         ctx.getSharedPreferences(BuildConfig.PREFS_PLAIN, Context.MODE_PRIVATE)
@@ -66,12 +73,17 @@ class Prefs(ctx: Context) {
 
     // ── run channel ─────────────────────────────────────────────────────────
 
-    var runChannel: RunChannel
+    var runChannel: Int
         get() {
-            val raw = plain.getString(BuildConfig.K_RUN_CHANNEL, null) ?: return RunChannel.UNDECIDED
-            return runCatching { RunChannel.valueOf(raw) }.getOrDefault(RunChannel.UNDECIDED)
+            val raw = try {
+                plain.getInt(BuildConfig.K_RUN_CHANNEL, RunChannel.UNDECIDED)
+            } catch (_: ClassCastException) {
+                plain.edit().remove(BuildConfig.K_RUN_CHANNEL).apply()
+                RunChannel.UNDECIDED
+            }
+            return if (raw == RunChannel.STREAM || raw == RunChannel.NATIVE) raw else RunChannel.UNDECIDED
         }
-        set(v) = plain.edit().putString(BuildConfig.K_RUN_CHANNEL, v.name).apply()
+        set(v) = plain.edit().putInt(BuildConfig.K_RUN_CHANNEL, v).apply()
 
     // ── destination URL + expiry ────────────────────────────────────────────
 

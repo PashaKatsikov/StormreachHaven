@@ -5,4 +5,6 @@
     <color name="gold">#FFD45A</color>
     <color name="black">#000000</color>
     <color name="white">#FFFFFF</color>
+    <!-- Fills the adaptive-icon margin outside the artwork. Circular masks never show it. -->
+    <color name="ic_launcher_background">#9590AB</color>
 </resources>

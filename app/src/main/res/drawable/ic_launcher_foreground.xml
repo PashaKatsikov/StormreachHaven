@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Adaptive layers are 108dp; the launcher mask viewport is the center 72dp
+  (inset 18/108 = 16.67% on each side). Placing the square artwork in that
+  viewport makes a circular mask the circle inscribed in the artwork.
+-->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/ic_launcher_src"
+    android:insetLeft="16.67%"
+    android:insetTop="16.67%"
+    android:insetRight="16.67%"
+    android:insetBottom="16.67%" />

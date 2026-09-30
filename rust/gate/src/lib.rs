@@ -8,6 +8,13 @@
 //!   * the HTTPS POST to the relay (ureq + rustls),
 //!   * the stream/native decision.
 //! Kotlin never sees the endpoint and makes no network call itself.
+//!
+//! On top of routing, the library also owns the native game's progress vault
+//! (`Java_..._NativeGate_seal` / `..._open`). SharedPreferences values are
+//! XOR-encrypted and HMAC-tagged with a key that lives only inside `.so`; a
+//! tag mismatch on read is silently reported to Kotlin as "reset to default",
+//! so a hex-editor cheat over a saved int cannot survive one launch. Runs
+//! fully offline.
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
@@ -42,6 +49,21 @@ const F_NONCE: &str = "x";
 const F_PAYLOAD: &str = "b";
 const F_TAG: &str = "u";
 const SCHEMA_REV: u64 = 13;
+
+// ── Progress-vault secret (separate keying material from routing) ──────────
+// XORed with SALT at rest, just like ENDPOINT_ENC / SECRET_ENC — never
+// appears as plaintext in the .so image. Rotate per project.
+const VAULT_SECRET_ENC: &[u8] = &[
+    0x4A, 0x91, 0xC3, 0x27, 0xE8, 0x1D, 0xB6, 0x54, 0x02, 0xAF, 0x73, 0x9E, 0x6C, 0xD5, 0x38, 0x1B,
+    0x82, 0x40, 0xF7, 0xA9, 0x2E, 0x67, 0xCB, 0x14, 0x5D, 0x39, 0xE2, 0x76, 0x8A, 0xC0, 0x4F, 0x21,
+    0xB3, 0x58, 0x99, 0x0E, 0x7D, 0xE4, 0x35, 0xA7, 0x62, 0x1C, 0xF0, 0x48, 0x93, 0xDA, 0x56, 0x2B,
+];
+// Domain separator: bumping it invalidates every save from the previous rev.
+const VAULT_DOMAIN: &[u8] = b"stormreach-vault-v1";
+// Full HMAC-SHA256 is 32 bytes; we truncate to 16 (128 bits) — plenty against
+// an offline forger who has to guess without the .so key.
+const VAULT_TAG_LEN: usize = 16;
+const VAULT_NONCE_LEN: usize = 16;
 
 fn deob(enc: &[u8]) -> Vec<u8> {
     enc.iter()
@@ -214,6 +236,113 @@ fn route_internal(
 
 fn jstr(env: &mut JNIEnv, s: &JString) -> String {
     env.get_string(s).map(|v| v.into()).unwrap_or_default()
+}
+
+// ─── Progress vault (offline anti-cheat) ────────────────────────────────────
+//
+// Wire format (before base64url):
+//   nonce (16)  ||  tag (16)  ||  ciphertext (n)
+//
+// Ciphertext is the plaintext XORed with SHA-256(secret || nonce || counter).
+// Tag is HMAC-SHA256(secret, VAULT_DOMAIN || aad_len(u32be) || aad || nonce
+// || ciphertext), truncated to the first 16 bytes. `aad` is the SharedPrefs
+// key; binding it means an attacker cannot move a legitimate sealed blob
+// from one preference key to another.
+
+fn vault_key() -> Vec<u8> {
+    // Derive a working key so the raw deob'd bytes never touch HMAC directly.
+    let raw = deob(VAULT_SECRET_ENC);
+    let mut h = Sha256::new();
+    h.update(VAULT_DOMAIN);
+    h.update(b"|kdf|");
+    h.update(&raw);
+    h.finalize().to_vec()
+}
+
+fn vault_tag(key: &[u8], nonce: &[u8], aad: &[u8], ct: &[u8]) -> Vec<u8> {
+    let mut mac = HmacSha256::new_from_slice(key).expect("hmac key");
+    mac.update(VAULT_DOMAIN);
+    mac.update(&(aad.len() as u32).to_be_bytes());
+    mac.update(aad);
+    mac.update(nonce);
+    mac.update(ct);
+    let full = mac.finalize().into_bytes();
+    full[..VAULT_TAG_LEN].to_vec()
+}
+
+fn ct_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
+fn seal_bytes(plaintext: &[u8], aad: &[u8]) -> Option<String> {
+    let mut nonce = [0u8; VAULT_NONCE_LEN];
+    getrandom::getrandom(&mut nonce).ok()?;
+    let key = vault_key();
+    let ks = keystream(&key, &nonce, plaintext.len());
+    let ct: Vec<u8> = plaintext.iter().zip(ks.iter()).map(|(a, b)| a ^ b).collect();
+    let tag = vault_tag(&key, &nonce, aad, &ct);
+    let mut blob = Vec::with_capacity(VAULT_NONCE_LEN + VAULT_TAG_LEN + ct.len());
+    blob.extend_from_slice(&nonce);
+    blob.extend_from_slice(&tag);
+    blob.extend_from_slice(&ct);
+    Some(URL_SAFE_NO_PAD.encode(&blob))
+}
+
+fn open_bytes(sealed_b64: &str, aad: &[u8]) -> Option<Vec<u8>> {
+    let blob = URL_SAFE_NO_PAD.decode(sealed_b64.as_bytes()).ok()?;
+    if blob.len() < VAULT_NONCE_LEN + VAULT_TAG_LEN {
+        return None;
+    }
+    let (nonce, rest) = blob.split_at(VAULT_NONCE_LEN);
+    let (tag, ct) = rest.split_at(VAULT_TAG_LEN);
+    let key = vault_key();
+    let expected = vault_tag(&key, nonce, aad, ct);
+    if !ct_eq(tag, &expected) {
+        return None;
+    }
+    let ks = keystream(&key, nonce, ct.len());
+    Some(ct.iter().zip(ks.iter()).map(|(a, b)| a ^ b).collect())
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_stormreachhaven_stormreachgame_NativeGate_seal<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    plaintext: JString<'local>,
+    aad: JString<'local>,
+) -> jstring {
+    let pt = jstr(&mut env, &plaintext);
+    let ad = jstr(&mut env, &aad);
+    let out = seal_bytes(pt.as_bytes(), ad.as_bytes()).unwrap_or_default();
+    env.new_string(out)
+        .map(|s| s.into_raw())
+        .unwrap_or(std::ptr::null_mut())
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_stormreachhaven_stormreachgame_NativeGate_open<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    sealed: JString<'local>,
+    aad: JString<'local>,
+) -> jstring {
+    let sealed_s = jstr(&mut env, &sealed);
+    let ad = jstr(&mut env, &aad);
+    // Empty response = tag mismatch (or malformed). Kotlin reads that as
+    // "no valid value stored" and falls back to the caller's default.
+    let out = open_bytes(&sealed_s, ad.as_bytes())
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .unwrap_or_default();
+    env.new_string(out)
+        .map(|s| s.into_raw())
+        .unwrap_or(std::ptr::null_mut())
 }
 
 #[no_mangle]

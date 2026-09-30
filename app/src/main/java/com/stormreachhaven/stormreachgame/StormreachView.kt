@@ -3,7 +3,6 @@ package com.stormreachhaven.stormreachgame
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -41,7 +40,6 @@ class StormreachView(context: Context) : View(context) {
     private val targets = ArrayList<Target>()
 
     @Volatile private var released = false
-    @Volatile private var loading = 0f
     private val startedAt = System.nanoTime()
     private var pressX = 0f
     private var pressY = 0f
@@ -89,102 +87,14 @@ class StormreachView(context: Context) : View(context) {
     init {
         isFocusable = true
         keepScreenOn = true
-        loadAssets()
-    }
-
-    // ------------------------------------------------------------------ assets
-
-    private fun loadAssets() {
-        thread(name = "Stormreach assets") {
-            val names = listOf(
-                "Vertical_Loading_Screen.webp", "Game_Name.webp",
-                "Stormreach_Haven_Background_asset.webp", "Mount_Olympus_Background_asset.webp",
-                "Temple_of_Zeus_Background_asset.webp", "Aether_Isles_Background_asset.webp",
-                "Valley_of_Thunder_Background_asset.webp", "Crystal_Caverns_Background_asset.webp",
-                "Palace_of_the_Gods_Background_asset.webp", "Celestial_Storm_Background_asset.webp",
-                "Gemstones_Ruby_Sapphire_Emerald_Amethyst_asset.webp",
-                "Celestial_Cloud_Clusters_Set_asset.webp",
-                "Lightning_Bolt_Effects_Set_asset.webp",
-                "Thunder_Forge_asset.webp", "Gemstone_Altar_asset.webp",
-                "Zeus_Main_Character_asset.webp", "Stormreach_Haven_Core_asset.webp",
-                "Divine_Lightning_Core_asset.webp", "Storm_Crystal_asset.webp",
-                "Olympus_Energy_Orb_asset.webp", "Divine_Gem_Fragment_asset.webp",
-                "Haven_Restoration_Stone_asset.webp", "Golden_Divine_Relic_asset.webp",
-                "Zeus_Thunder_Symbol_asset.webp", "Ancient_Lightning_Seal_asset.webp"
-            )
-            names.forEachIndexed { index, name ->
-                if (released) return@thread
-                try {
-                    context.assets.open(name).use { stream ->
-                        BitmapFactory.decodeStream(stream)?.let { prepareBitmap(name, it) }
-                    }
-                } catch (_: Exception) { }
-                loading = (index + 1f) / (names.size + 1f)
-                postInvalidate()
-            }
-            if (released) return@thread
+        // Art was decoded during the router splash. Open straight on the game
+        // screen so this view never paints its own loading artwork.
+        bitmaps.putAll(GameAssets.bitmaps)
+        controller.finishLoading()
+        thread(name = "Stormreach audio") {
             setupAudio()
-            loading = 1f
-            postDelayed({
-                if (released) return@postDelayed
-                controller.finishLoading()
-                resumeAudio()
-            }, 420)
+            post { if (!released) resumeAudio() }
         }
-    }
-
-    private fun prepareBitmap(name: String, bitmap: Bitmap) {
-        when (name) {
-            "Gemstones_Ruby_Sapphire_Emerald_Amethyst_asset.webp" -> slice(bitmap, 2, 2, "gem_")
-            "Celestial_Cloud_Clusters_Set_asset.webp" -> slice(bitmap, 2, 2, "cloud_")
-            "Lightning_Bolt_Effects_Set_asset.webp" -> slice(bitmap, 4, 1, "bolt_")
-            else -> {
-                val keepFrame = name.contains("_Background_") || name.contains("Loading_Screen")
-                bitmaps[name] = if (keepFrame) bitmap else trimTransparent(bitmap)
-            }
-        }
-    }
-
-    private fun slice(sheet: Bitmap, columns: Int, rows: Int, prefix: String) {
-        val cellW = sheet.width / columns
-        val cellH = sheet.height / rows
-        for (row in 0 until rows) {
-            for (column in 0 until columns) {
-                val cell = Bitmap.createBitmap(sheet, column * cellW, row * cellH, cellW, cellH)
-                bitmaps["$prefix${row * columns + column}"] = trimTransparent(cell)
-            }
-        }
-        sheet.recycle()
-    }
-
-    private fun trimTransparent(source: Bitmap): Bitmap {
-        if (!source.hasAlpha()) return source
-        val pixels = IntArray(source.width * source.height)
-        source.getPixels(pixels, 0, source.width, 0, 0, source.width, source.height)
-        var left = source.width
-        var top = source.height
-        var right = -1
-        var bottom = -1
-        pixels.forEachIndexed { index, color ->
-            if (Color.alpha(color) > 12) {
-                val x = index % source.width
-                val y = index / source.width
-                if (x < left) left = x
-                if (x > right) right = x
-                if (y < top) top = y
-                if (y > bottom) bottom = y
-            }
-        }
-        if (right < left || bottom < top) return source
-        val pad = 6
-        left = max(0, left - pad)
-        top = max(0, top - pad)
-        right = min(source.width - 1, right + pad)
-        bottom = min(source.height - 1, bottom + pad)
-        if (left == 0 && top == 0 && right == source.width - 1 && bottom == source.height - 1) return source
-        val cropped = Bitmap.createBitmap(source, left, top, right - left + 1, bottom - top + 1)
-        source.recycle()
-        return cropped
     }
 
     // ------------------------------------------------------------------- audio
@@ -256,7 +166,7 @@ class StormreachView(context: Context) : View(context) {
         released = true
         soundPool?.release()
         ambience?.release()
-        bitmaps.values.forEach { if (!it.isRecycled) it.recycle() }
+        // Bitmaps belong to GameAssets and are reused on the next native launch.
         bitmaps.clear()
     }
 
@@ -278,25 +188,38 @@ class StormreachView(context: Context) : View(context) {
     // -------------------------------------------------------------------- draw
 
     /**
-     * Bars are hidden, so the system reports zero gesture insets. The bottom swipe strip is
-     * still active, so a minimum margin is always reserved to keep the nav bar tappable.
+     * Top inset is the camera cutout only, so the back button and screen titles
+     * sit below the notch. It is not capped: a percentage of the screen is often
+     * shorter than the cutout, and height is still 0 the first time insets arrive.
      */
     @Suppress("DEPRECATION")
     override fun onApplyWindowInsets(insets: WindowInsets): WindowInsets {
         var bottom = ui.dp(20f)
-        var top = 0f
+        var top = 0
         if (android.os.Build.VERSION.SDK_INT >= 30) {
             val gestures = insets.getInsets(WindowInsets.Type.mandatorySystemGestures())
             bottom = max(bottom, gestures.bottom.toFloat())
+            top = insets.getInsets(WindowInsets.Type.displayCutout()).top
         } else if (android.os.Build.VERSION.SDK_INT >= 29) {
             bottom = max(bottom, insets.mandatorySystemGestureInsets.bottom.toFloat())
         }
         if (android.os.Build.VERSION.SDK_INT >= 28) {
-            insets.displayCutout?.let { top = min(height * .06f, it.safeInsetTop.toFloat()) }
+            top = max(top, insets.displayCutout?.safeInsetTop ?: 0)
         }
-        insetTop = top
-        insetBottom = min(height * .08f, bottom)
+        insetTop = top.toFloat()
+        insetBottom = if (height > 0) min(height * .08f, bottom) else bottom
+        invalidate()
         return super.onApplyWindowInsets(insets)
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        requestApplyInsets()
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        requestApplyInsets()
     }
 
     override fun onDraw(canvas: Canvas) {

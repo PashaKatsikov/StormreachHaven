@@ -51,10 +51,6 @@
 -keep class com.stormreachhaven.stormreachgame.NativeGate { *; }
 -keepclasseswithmembernames class * { native <methods>; }
 
-# RunChannel is persisted by its enum constant name (valueOf). Renaming
-# UNDECIDED / STREAM / NATIVE would make a stored value unreadable.
--keepclassmembernames enum com.stormreachhaven.stormreachgame.prefs.Prefs$RunChannel { *; }
-
 # ══ Strip debug-level logs in release ══════════════════════════════════════
 -assumenosideeffects class android.util.Log {
     public static *** d(...);
