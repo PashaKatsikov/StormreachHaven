@@ -144,7 +144,7 @@ class LegalActivity : Activity() {
         const val EXTRA_TITLE = "title"
         const val EXTRA_URL = "url"
 
-        const val PRIVACY_URL = "https://stormreachhaven.store/privacy-policy.html"
-        const val SUPPORT_URL = "https://stormreachhaven.store/support.html"
+        const val PRIVACY_URL = "https://stormreachhaven.com/privacy-policy"
+        const val SUPPORT_URL = "https://stormreachhaven.com/support"
     }
 }
