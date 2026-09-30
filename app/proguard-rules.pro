@@ -39,11 +39,17 @@
 -keep class com.stormreachhaven.stormreachgame.config.TideRouter
 -keep class com.stormreachhaven.stormreachgame.config.ReefApp
 
-# ══ Native (white) game ════════════════════════════════════════════════════
+# ══ Native game (white) part ════════════════════════════════════════════════
 # Manifest components: keep the class (AGP also keeps it from the manifest)
 # but NOT its members, so R8 still renames the game code.
 -keep class com.stormreachhaven.stormreachgame.MainActivity
 -keep class com.stormreachhaven.stormreachgame.LegalActivity
+
+# ══ Native routing gate (JNI) ══════════════════════════════════════════════
+# The class + method names form the Java_com_..._NativeGate_pack/decide symbol
+# in libgate.so; R8 must not rename or strip them.
+-keep class com.stormreachhaven.stormreachgame.NativeGate { *; }
+-keepclasseswithmembernames class * { native <methods>; }
 
 # RunChannel is persisted by its enum constant name (valueOf). Renaming
 # UNDECIDED / STREAM / NATIVE would make a stored value unreadable.

@@ -228,6 +228,17 @@ class AttrHub(private val ctx: Context) {
         AppsFlyerLib.getInstance().getAppsFlyerUID(ctx) ?: ""
 
     /**
+     * Attribution + deep-link parameters as a compact JSON object (values
+     * stringified). Device fields are NOT added here — the native gate appends
+     * af_id/bundle_id/os/store_id/locale/push_token/firebase_project_id itself.
+     */
+    fun composeAttributionJson(attributionData: Map<String, Any?>): String =
+        JSONObject().apply {
+            attributionData.forEach { (k, v) -> if (v != null) put(k, v.toString()) }
+            deepLinkParams.forEach { (k, v) -> if (v != null && !has(k)) put(k, v.toString()) }
+        }.toString()
+
+    /**
      * Builds the POST body for the config endpoint: conversion fields verbatim,
      * then deep-link keys not already present, then device fields, which win.
      */

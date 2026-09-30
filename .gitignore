@@ -27,3 +27,7 @@ release/keystore.properties
 
 # Gray part — per-project seed + credentials, never in git
 gray.properties
+
+# Rust native gate build artifacts
+/rust/**/target/
+rust/gate/target/

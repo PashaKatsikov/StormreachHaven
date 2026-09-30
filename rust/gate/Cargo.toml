@@ -1,0 +1,23 @@
+[package]
+name = "gate"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+jni = "0.21"
+serde_json = "1.0"
+sha2 = "0.10"
+hmac = "0.12"
+base64 = "0.22"
+getrandom = "0.2"
+# Blocking HTTP + rustls(ring) — portable to Android via cargo-ndk.
+ureq = "2.9"
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true
+codegen-units = 1

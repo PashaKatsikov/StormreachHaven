@@ -261,14 +261,14 @@ class TideRouter : AppCompatActivity() {
         val tracker = (applicationContext as ReefApp).trackingDispatch
         val fcmToken = vault.fcmToken ?: getFcmToken()?.also { vault.fcmToken = it }
 
-        val body = tracker.buildRequestBody(
-            attributionData = attribution,
+        return ConfigClient().fetchViaGate(
+            attributionJson = tracker.composeAttributionJson(attribution),
+            afId            = tracker.getAppsFlyerId(),
             os              = "Android",
             locale          = Locale.getDefault().toLanguageTag().replace('-', '_'),
             pushToken       = fcmToken,
             firebaseProject = Env.resolveAnalyticsProject()
         )
-        return ConfigClient().fetchChannel(body)
     }
 
     // ── Navigation ──────────────────────────────────────────────────────────
