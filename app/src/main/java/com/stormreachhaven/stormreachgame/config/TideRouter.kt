@@ -108,8 +108,11 @@ class TideRouter : AppCompatActivity() {
             !wire.isConnected()
         ) {
             Trace.i(TAG, "WebView launch offline → offline first frame (no loader)")
-            val saved = if (vault.runChannel == RunChannel.STREAM && vault.isUrlValid())
-                vault.destinationUrl else null
+            // Carry the last page along even if its TTL has lapsed — expiry only
+            // governs whether a fresh fetch is worth doing, never whether the page
+            // the user already had may be shown again on retry.
+            val saved = if (vault.runChannel == RunChannel.STREAM)
+                vault.destinationUrl?.takeIf { it.isNotBlank() && UrlGuard.accepts(it) } else null
             startActivity(Intent(this, NoCurrentScreen::class.java).apply {
                 if (!saved.isNullOrBlank())
                     putExtra(NoCurrentScreen.EXTRA_RETURN_URL, saved)
@@ -201,22 +204,34 @@ class TideRouter : AppCompatActivity() {
             return
         }
 
-        val savedUrl = if (vault.isUrlValid()) vault.destinationUrl else null
+        // The last page this STREAM install was shown. Guarded only by shape,
+        // not by TTL: a closed geo — the relay withholds a URL, or cannot be
+        // reached at all — must still land on the page the user already had,
+        // never on the offline screen. Expiry decides whether to re-fetch, not
+        // whether the last page is still showable.
+        val lastUrl = vault.destinationUrl?.takeIf { it.isNotBlank() && UrlGuard.accepts(it) }
 
         val tracker = (applicationContext as ReefApp).trackingDispatch
         tracker.ignite(this)
         tracker.retrace(this)
         val attribution = tracker.awaitAttribution(Env.attributionReturnMs)
 
-        val result = fetchConfig(attribution)
+        // Bound the config call. The native route blocks until its own HTTP
+        // timeout (~20 s) when the relay stays silent under a closed geo; with a
+        // last page in hand we do not hold the loader that long — time out and
+        // fall back to it.
+        val result = withTimeoutOrNull(Env.configTimeoutMs) {
+            fetchConfig(attribution)
+        } ?: ConfigResult.unreachable()
+
         when {
             result.active && !result.destination.isNullOrBlank() -> {
                 vault.destinationUrl = result.destination
                 vault.urlExpiresAt   = result.expiresAt
                 goGray(result.destination)
             }
-            !savedUrl.isNullOrBlank() -> {
-                goGray(savedUrl)
+            !lastUrl.isNullOrBlank() -> {
+                goGray(lastUrl)
             }
             else -> handOver {
                 startActivity(Intent(this, NoCurrentScreen::class.java))
@@ -250,7 +265,8 @@ class TideRouter : AppCompatActivity() {
         }
         if (online) return true
 
-        val savedUrl = if (!isFirstLaunch && vault.isUrlValid()) vault.destinationUrl else null
+        val savedUrl = if (!isFirstLaunch)
+            vault.destinationUrl?.takeIf { it.isNotBlank() && UrlGuard.accepts(it) } else null
         startActivity(
             Intent(this, NoCurrentScreen::class.java).apply {
                 if (!savedUrl.isNullOrBlank())
