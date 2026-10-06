@@ -31,3 +31,5 @@ gray.properties
 # Rust native gate build artifacts
 /rust/**/target/
 rust/gate/target/
+# Local NDK linker paths; not portable across machines.
+rust/gate/.cargo/
