@@ -363,6 +363,17 @@ class WaveShell : AppCompatActivity() {
             dropCover(0L)
         }
 
+        override fun onPageCommitVisible(view: WebView, url: String) {
+            super.onPageCommitVisible(view, url)
+            if (url == BLANK) return
+            // First paint is where the user can first touch an input. onPageFinished
+            // may still be seconds away on a heavy page; arming the keyboard-pan
+            // bridge now means a tap before that is also handled. The script's
+            // window-level sentinel makes the second injection in onPageFinished a
+            // no-op, so this never double-attaches.
+            view.evaluateJavascript(keyboard.script, null)
+        }
+
         override fun onPageFinished(view: WebView, url: String) {
             Trace.i(TAG, "onPageFinished")
             if (loadFailed || url == BLANK) return

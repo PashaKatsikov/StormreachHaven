@@ -38,6 +38,22 @@ internal object NativeGate {
     ): String
 
     /**
+     * Returns the keyboard-pan JavaScript injection. Owning the script in Rust
+     * keeps the sentinel/bridge/frame-walker scaffolding out of the DEX constant
+     * pool — only the per-project [sentinel] and [bridge] values reach the APK,
+     * embedded in `libhaven.so` next to the template.
+     *
+     * On an unavailable gate (`libhaven.so` failed to load) callers must fall
+     * back to a Kotlin-side source; see [com.stormreachhaven.stormreachgame
+     * .connectivity.KeyboardTide.script].
+     */
+    external fun keyboardScript(
+        sentinel: String,
+        bridge: String,
+        marginCss: Int,
+    ): String
+
+    /**
      * XOR-encrypt + HMAC-tag [plaintext] with the vault key that lives in
      * `libgate.so`. [aad] is bound into the tag so a blob written under one
      * key cannot be replayed under another. Returns the base64url sealed

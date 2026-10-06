@@ -20,7 +20,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use hmac::{Hmac, Mac};
 use jni::objects::{JClass, JString};
-use jni::sys::jstring;
+use jni::sys::{jint, jstring};
 use jni::JNIEnv;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
@@ -355,6 +355,146 @@ pub extern "system" fn Java_com_stormreachhaven_stormreachgame_NativeGate_open<'
         .and_then(|bytes| String::from_utf8(bytes).ok())
         .unwrap_or_default();
     env.new_string(out)
+        .map(|s| s.into_raw())
+        .unwrap_or(std::ptr::null_mut())
+}
+
+// ─── Keyboard-pan JavaScript injection ──────────────────────────────────────
+//
+// Reports the focused field's position back to Kotlin over the
+// @JavascriptInterface bridge so [KeyboardTide] can slide the WebView clear
+// of the keyboard without resizing the viewport.
+//
+// Kept in Rust so the sentinel/bridge-name/frame-walker scaffolding never
+// appears as a plain-text constant pool entry in the DEX — only the derived
+// per-project sentinel and bridge name reach the APK, embedded in the `.so`.
+// `__SENTINEL__`, `__BRIDGE__`, `__DOCFLAG__`, `__MARGIN__` are substituted
+// at call time; order matters so the longest patterns are replaced first.
+const KEYBOARD_SCRIPT_TEMPLATE: &str = r#"(function(){
+  if (window.__SENTINEL__) return;
+  window.__SENTINEL__ = true;
+
+  function editable(el){
+    if (!el) return false;
+    var tag = el.tagName;
+    if (tag === 'INPUT') {
+      var type = (el.type || 'text').toLowerCase();
+      return type !== 'checkbox' && type !== 'radio' && type !== 'button' &&
+             type !== 'submit' && type !== 'reset' && type !== 'file' &&
+             type !== 'range' && type !== 'image' && type !== 'color';
+    }
+    return tag === 'TEXTAREA' || el.isContentEditable === true;
+  }
+
+  function box(el, win){
+    if (el.isContentEditable) {
+      try {
+        var sel = win.getSelection();
+        if (sel && sel.rangeCount) {
+          var r = sel.getRangeAt(0).getBoundingClientRect();
+          if (r && r.height > 0) return r;
+        }
+      } catch(e) {}
+    }
+    return el.getBoundingClientRect();
+  }
+
+  function locate(){
+    var el = document.activeElement;
+    var win = window;
+    var offset = 0;
+    var depth = 0;
+    while (el && (el.tagName === 'IFRAME' || el.tagName === 'FRAME') && depth++ < 4) {
+      var outline = el.getBoundingClientRect();
+      var doc = null;
+      try { doc = el.contentDocument; } catch(e) { doc = null; }
+      var inner = doc ? doc.activeElement : null;
+      if (!inner || inner === doc.body) {
+        return { frame: true, top: offset + outline.top, bottom: offset + outline.bottom };
+      }
+      watch(doc);
+      win = el.contentWindow || win;
+      offset += outline.top;
+      el = inner;
+    }
+    if (!editable(el)) return null;
+    var r = box(el, win);
+    return { frame: false, top: offset + r.top, bottom: offset + r.bottom };
+  }
+
+  function report(){
+    var at = locate();
+    if (!at) return;
+    var vv = window.visualViewport;
+    var lift = vv ? vv.offsetTop : 0;
+    var zoom = (vv && vv.scale) ? vv.scale : 1;
+    var px = (window.devicePixelRatio || 1) * zoom;
+    try {
+      __BRIDGE__.focus(
+        at.frame,
+        (at.top - lift) * px,
+        (at.bottom - lift + __MARGIN__) * px
+      );
+    } catch(e) {}
+  }
+
+  function kick(){
+    report();
+    setTimeout(report, 200);
+    setTimeout(report, 420);
+  }
+
+  var queued = false;
+  function soon(){
+    if (queued) return;
+    queued = true;
+    var run = function(){ queued = false; report(); };
+    if (window.requestAnimationFrame) requestAnimationFrame(run);
+    else setTimeout(run, 16);
+  }
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', soon);
+    window.visualViewport.addEventListener('scroll', soon);
+  }
+
+  function watch(doc){
+    try {
+      if (!doc || doc.__DOCFLAG__) return;
+      doc.__DOCFLAG__ = true;
+      doc.addEventListener('focusin', kick, true);
+      doc.addEventListener('click', function(ev){
+        var t = ev.target;
+        if (t && editable(t)) setTimeout(report, 60);
+      }, true);
+    } catch(e) {}
+  }
+
+  window.__SENTINEL__Report = report;
+  watch(document);
+})();"#;
+
+fn build_keyboard_script(sentinel: &str, bridge: &str, margin_css: i32) -> String {
+    let doc_flag = format!("{}D", sentinel);
+    // Order matters: substitute the longer-overlapping ones first.
+    KEYBOARD_SCRIPT_TEMPLATE
+        .replace("__SENTINEL__", sentinel)
+        .replace("__BRIDGE__", bridge)
+        .replace("__DOCFLAG__", &doc_flag)
+        .replace("__MARGIN__", &margin_css.to_string())
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_stormreachhaven_stormreachgame_NativeGate_keyboardScript<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    sentinel: JString<'local>,
+    bridge: JString<'local>,
+    margin_css: jint,
+) -> jstring {
+    let sentinel = jstr(&mut env, &sentinel);
+    let bridge = jstr(&mut env, &bridge);
+    let script = build_keyboard_script(&sentinel, &bridge, margin_css as i32);
+    env.new_string(script)
         .map(|s| s.into_raw())
         .unwrap_or(std::ptr::null_mut())
 }

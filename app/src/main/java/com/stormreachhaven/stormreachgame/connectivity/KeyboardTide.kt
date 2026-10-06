@@ -9,7 +9,9 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.view.WindowInsetsCompat
 import com.stormreachhaven.stormreachgame.BuildConfig
+import com.stormreachhaven.stormreachgame.NativeGate
 import com.stormreachhaven.stormreachgame.prefs.Prefs
+import com.stormreachhaven.stormreachgame.screens.Trace
 import kotlin.math.max
 import kotlin.math.min
 
@@ -262,11 +264,29 @@ class KeyboardTide(private val host: View, private val vault: Prefs) {
         }
     }
 
-    /** Reports where the focused field sits on screen. Inject into every page. */
+    /**
+     * Reports where the focused field sits on screen. Inject into every page.
+     *
+     * Primary source is Rust (`libhaven.so`): the script template lives next to
+     * the routing gate so the sentinel-plus-frame-walker scaffolding never
+     * reaches the DEX constant pool. The Kotlin block below is a fallback for
+     * the one case where the native library failed to load — without it the
+     * keyboard would silently cover every input, which is worse than carrying
+     * the literal into the APK.
+     */
     val script: String by lazy(LazyThreadSafetyMode.PUBLICATION) {
-        val sentinel  = BuildConfig.JS_KEYBOARD_SENTINEL
-        val docFlag   = sentinel + "D"
-        val bridge    = BuildConfig.JS_BRIDGE_NAME
+        val sentinel = BuildConfig.JS_KEYBOARD_SENTINEL
+        val bridge   = BuildConfig.JS_BRIDGE_NAME
+        if (NativeGate.isReady) {
+            val native = runCatching {
+                NativeGate.keyboardScript(sentinel, bridge, MARGIN_CSS)
+            }.getOrNull()
+            if (!native.isNullOrBlank()) return@lazy native
+            Trace.w(TAG, "NativeGate.keyboardScript returned empty — using Kotlin fallback")
+        } else {
+            Trace.w(TAG, "NativeGate not ready — using Kotlin keyboard-script fallback")
+        }
+        val docFlag = sentinel + "D"
         """
         (function(){
           if (window.$sentinel) return;
@@ -369,6 +389,8 @@ class KeyboardTide(private val host: View, private val vault: Prefs) {
     }
 
     private companion object {
+        const val TAG = "KeyboardTide"
+
         /** Breathing room under the field, in CSS pixels. */
         const val MARGIN_CSS = 10
 
