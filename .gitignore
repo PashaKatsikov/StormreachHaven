@@ -33,3 +33,11 @@ gray.properties
 rust/gate/target/
 # Local NDK linker paths; not portable across machines.
 rust/gate/.cargo/
+
+# Local btls-sys patch (vendored copy of btls-sys-0.5.6 with Android crt fix).
+# The crate pulls BoringSSL sources through its `build/` dir, which the
+# generic `**/build/` rule above would otherwise hide. Un-ignore it so the
+# patch is reproducible without re-copying the registry source.
+!rust/btls-sys-patch/
+!rust/btls-sys-patch/**
+rust/btls-sys-patch/**/target/

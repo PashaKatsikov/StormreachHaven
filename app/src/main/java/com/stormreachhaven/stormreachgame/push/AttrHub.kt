@@ -229,8 +229,9 @@ class AttrHub(private val ctx: Context) {
 
     /**
      * Attribution + deep-link parameters as a compact JSON object (values
-     * stringified). Device fields are NOT added here — the native gate appends
-     * af_id/bundle_id/os/store_id/locale/push_token/firebase_project_id itself.
+     * stringified). Device fields are NOT added here — [ConfigClient.buildBody]
+     * appends af_id/bundle_id/os/store_id/locale/push_token/firebase_project_id
+     * before handing the merged payload to the native transport.
      */
     fun composeAttributionJson(attributionData: Map<String, Any?>): String =
         JSONObject().apply {

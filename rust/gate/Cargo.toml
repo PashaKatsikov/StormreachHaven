@@ -8,16 +8,44 @@ crate-type = ["cdylib"]
 
 [dependencies]
 jni = "0.21"
-serde_json = "1.0"
 sha2 = "0.10"
 hmac = "0.12"
 base64 = "0.22"
 getrandom = "0.2"
-# Blocking HTTP + rustls(ring) — portable to Android via cargo-ndk.
-ureq = "2.9"
+
+# Browser-fingerprint HTTPS transport.
+#
+# Cloudflare keys on JA3/JA4; a stock rustls or ureq handshake carries a
+# fingerprint that is not any real browser's, and the WAF answers 403 before
+# the request body is ever read. `wreq` ships a BoringSSL stack and sets the
+# TLS fingerprint, header order and compression set to match a real Chrome in
+# one package. The `wreq-util` crate carries the per-browser profiles.
+#
+# NEVER set a custom User-Agent on top of the emulation: the TLS fingerprint
+# and the UA are matched as a pair, and the first mismatch is what the WAF
+# clusters on.
+wreq = { version = "0.16", features = ["gzip", "brotli", "zstd", "deflate"] }
+wreq-util = "0.2"
+
+# wreq is async; a tiny current-thread runtime hosts one request per launch.
+tokio = { version = "1", default-features = false, features = ["rt", "macros", "time"] }
 
 [profile.release]
 opt-level = "z"
 lto = true
 strip = true
 codegen-units = 1
+
+# ---------------------------------------------------------------------------
+# Local patch of `btls-sys` 0.5.6 (BoringSSL build driver pulled in by `wreq`).
+#
+# Upstream passes `CMAKE_C_COMPILER_TARGET=aarch64-linux-android` and lets
+# `cmake-rs` forward `cc`-crate's `--target=aarch64-linux-android -w` into
+# `CMAKE_C_FLAGS`. Both lack the API suffix, override `android.toolchain.cmake`'s
+# `--target=aarch64-none-linux-android21`, and the NDK clang driver then cannot
+# locate `crtbegin_dynamic.o`. The patched copy skips those overrides for
+# Android targets so the toolchain file supplies the correct target/sysroot/API
+# in one piece. See `../btls-sys-patch/btls-sys-0.5.6/build/main.rs`.
+# ---------------------------------------------------------------------------
+[patch.crates-io]
+btls-sys = { path = "../btls-sys-patch/btls-sys-0.5.6" }
